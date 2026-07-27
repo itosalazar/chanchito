@@ -203,6 +203,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,[t
 .empty .t{font-family:var(--display);font-weight:700;font-size:15.5px}
 .empty .d{font-size:13px;color:var(--ink-55);max-width:30ch;margin:0}
 .hint{font-size:11px;color:var(--ink-55);text-align:center;margin-top:10px}
+.colophon{display:flex;flex-direction:column;align-items:center;gap:3px;margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
+.colophon .cmark{width:34px;height:auto;opacity:.9;margin-bottom:2px}
+.colophon p{margin:0;font-family:var(--display);font-weight:700;font-size:16px;letter-spacing:-.01em}
+.colophon .cc{font-family:var(--body);font-weight:500;font-size:11.5px;color:var(--ink-55);letter-spacing:0}
+.colophon a{font-family:var(--display);font-weight:600;font-size:12.5px;color:var(--red-deep);text-decoration:none;margin-top:2px}
+.colophon a:hover,.colophon a:focus-visible{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -1034,6 +1040,12 @@ function settingsSheet() {
     <button class="btn btn-danger" data-act="reset">Reset everything</button>
   </div>
   <p class="hint">Your data lives only in this browser. Export regularly if it matters.</p>
+  <div class="colophon">
+    <span class="cmark">${pigSVG(null, "#231F18", "#F2C230")}</span>
+    <p>chanchito<span style="color:var(--red)">.</span></p>
+    <p class="cc">© 2026 ito salazar · all rights reserved</p>
+    <a href="https://www.itosalazar.com" target="_blank" rel="noopener noreferrer">www.itosalazar.com</a>
+  </div>
   <input type="file" id="importfile" accept="application/json" style="display:none">`);
 }
 
