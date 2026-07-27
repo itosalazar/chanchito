@@ -350,10 +350,10 @@ function sampleData() {
     { id: uid(), name: "Spotify", icon: "🎵", amount: 11.99, freq: "monthly", group: "subscription", due: 3 },
     { id: uid(), name: "Gym", icon: "🏋️", amount: 45, freq: "monthly", group: "fun", due: 1 }];
   S.investments = [
-    { id: uid(), name: "VEQT — All-Equity ETF", icon: "🌐", value: 12910, cost: 11400, contrib: 200 },
-    { id: uid(), name: "Retirement fund", icon: "🛡", value: 5480, cost: 5165, contrib: 250 },
-    { id: uid(), name: "High-interest ETF", icon: "🏦", value: 3960, cost: 3793, contrib: 200 },
-    { id: uid(), name: "Bitcoin", icon: "₿", value: 2480, cost: 2900, contrib: 0 }];
+    { id: uid(), name: "VEQT — All-Equity ETF", icon: "🌐", value: 12910, cost: 11400, contrib: 200, type: "ETF", rate: 8, currency: "USD" },
+    { id: uid(), name: "Retirement fund", icon: "🛡", value: 5480, cost: 5165, contrib: 250, type: "Retirement", rate: 6, currency: "USD" },
+    { id: uid(), name: "Long-term growth fund", icon: "📈", value: 8200, cost: 7000, contrib: 300, type: "Long-term fund", rate: 7, currency: "CAD" },
+    { id: uid(), name: "Bitcoin", icon: "₿", value: 2480, cost: 2900, contrib: 0, type: "Crypto", rate: 0, currency: "USD" }];
   S.assets = [
     { id: uid(), name: "Checking", icon: "🏦", value: 3240, liability: false },
     { id: uid(), name: "Emergency fund", icon: "🐷", value: 12000, liability: false },
@@ -379,6 +379,23 @@ function fmt(n, dec) {
   try { return new Intl.NumberFormat(S.locale, { style: "currency", currency: S.currency, minimumFractionDigits: d, maximumFractionDigits: d }).format(n); }
   catch (e) { return "$" + Math.round(n).toLocaleString(); }
 }
+// approximate cross-currency rates (units per 1 USD) for mixed-currency totals
+const FX = { USD: 1, CAD: 1.37, CRC: 520, GBP: 0.78, EUR: 0.92, MXN: 18 };
+function toBase(amount, cur) {
+  cur = cur || S.currency;
+  const from = FX[cur], to = FX[S.currency];
+  if (!from || !to) return +amount || 0;
+  return (+amount || 0) / from * to;
+}
+function fmtCur(n, cur, dec) {
+  cur = cur || S.currency;
+  const zeroDec = cur === "CRC" || cur === "JPY";
+  const d = dec != null ? dec : (zeroDec ? 0 : (Math.abs(n) >= 1000 ? 0 : 2));
+  try { return new Intl.NumberFormat(S.locale, { style: "currency", currency: cur, minimumFractionDigits: d, maximumFractionDigits: d }).format(n); }
+  catch (e) { return cur + " " + Math.round(n).toLocaleString(); }
+}
+const CURRENCIES = () => [...new Set([S.currency, "USD", "CAD", "CRC", "GBP", "EUR", "MXN"])];
+const INV_TYPES = ["ETF", "Stocks", "Retirement", "Mutual fund", "Long-term fund", "Crypto", "Real estate", "Other"];
 
 // ---------- stats & insights ----------
 function stats() {
@@ -389,9 +406,9 @@ function stats() {
   const rate = income > 0 ? saved / income : 0;
   const subs = act(S.expenses).filter(e => e.group === "subscription");
   const subTotal = subs.reduce((s, e) => s + monthly(e), 0);
-  const invested = act(S.investments).reduce((s, i) => s + (+i.value || 0), 0);
-  const invCost = act(S.investments).reduce((s, i) => s + (+i.cost || 0), 0);
-  const contrib = act(S.investments).reduce((s, i) => s + (+i.contrib || 0), 0);
+  const invested = act(S.investments).reduce((s, i) => s + toBase(+i.value || 0, i.currency), 0);
+  const invCost = act(S.investments).reduce((s, i) => s + toBase(+i.cost || 0, i.currency), 0);
+  const contrib = act(S.investments).reduce((s, i) => s + toBase(+i.contrib || 0, i.currency), 0);
   const assetsT = act(S.assets).filter(a => !a.liability).reduce((s, a) => s + (+a.value || 0), 0) + invested;
   const liab = act(S.assets).filter(a => a.liability).reduce((s, a) => s + (+a.value || 0), 0);
   const net = assetsT - liab;
@@ -457,8 +474,8 @@ function exportExcel() {
       S.incomes.map(i => [i.name, +i.amount || 0, FREQ_LABEL[i.freq] || i.freq, Math.round(monthly(i) * 100) / 100, i.archived ? "Yes" : "No", i.notes || ""])) +
     sheet("Expenses", ["Name", "Type", "Amount", "Frequency", "Monthly", "Due day", "Archived", "Notes"],
       S.expenses.map(e => [e.name, GROUPS[e.group] || "", +e.amount || 0, FREQ_LABEL[e.freq] || e.freq, Math.round(monthly(e) * 100) / 100, e.due || "", e.archived ? "Yes" : "No", e.notes || ""])) +
-    sheet("Investments", ["Name", "Value", "Cost basis", "Gain-Loss", "Monthly contribution"],
-      S.investments.map(i => [i.name, +i.value || 0, +i.cost || 0, (+i.value || 0) - (+i.cost || 0), +i.contrib || 0])) +
+    sheet("Investments", ["Name", "Type", "Currency", "Value", "Cost basis", "Gain-Loss", "Interest/Return %", "Monthly contribution"],
+      S.investments.map(i => [i.name, i.type || "", i.currency || S.currency, +i.value || 0, +i.cost || 0, (+i.value || 0) - (+i.cost || 0), +i.rate || 0, +i.contrib || 0])) +
     sheet("Assets & Debts", ["Name", "Kind", "Value", "Notes"],
       S.assets.map(a => [a.name, a.liability ? "Liability" : "Asset", (a.liability ? -1 : 1) * (+a.value || 0), a.notes || ""])) +
     sheet("Goals", ["Goal", "Target", "Saved", "Progress %", "Deadline"],
@@ -804,16 +821,20 @@ function renderGrow() {
       ${list.length ? `
       <div class="card">
         <span class="klabel">Allocation</span>
-        <div class="alloc" aria-hidden="true">${list.map((i, x) => `<span style="flex:${Math.max(1, +i.value || 1)};background:${COLORS[x % COLORS.length]}"></span>`).join("")}</div>
-        <div class="legend">${list.map((i, x) => `<span><span class="k" style="background:${COLORS[x % COLORS.length]}"></span>${esc(i.name.split(" ")[0])} <b>${t.invested ? Math.round((+i.value || 0) / t.invested * 100) : 0}%</b></span>`).join("")}</div>
+        <div class="alloc" aria-hidden="true">${list.map((i, x) => `<span style="flex:${Math.max(1, toBase(+i.value || 0, i.currency) || 1)};background:${COLORS[x % COLORS.length]}"></span>`).join("")}</div>
+        <div class="legend">${list.map((i, x) => `<span><span class="k" style="background:${COLORS[x % COLORS.length]}"></span>${esc(i.name.split(" ")[0])} <b>${t.invested ? Math.round(toBase(+i.value || 0, i.currency) / t.invested * 100) : 0}%</b></span>`).join("")}</div>
       </div>
       <div class="card" style="padding:6px 18px">${list.map(i => {
+        const cur = i.currency || S.currency;
         const g = (+i.value || 0) - (+i.cost || 0);
         const gp = +i.cost ? (g / +i.cost * 100).toFixed(1) : null;
-        return rowHTML("invest", i, `${fmt(+i.value || 0)}<br><span class="fq" style="color:${g >= 0 ? "var(--green-deep)" : "var(--red-deep)"}">${gp == null ? "" : (g >= 0 ? "▲ " : "▼ ") + Math.abs(gp) + "%"}</span>`,
-          (i.cost ? "Cost " + fmt(+i.cost) + (g ? " · " + (g > 0 ? "+" : "−") + fmt(Math.abs(g)) : "") : "No cost basis") + (i.contrib ? " · " + fmt(+i.contrib) + "/mo" : ""));
+        const badge = cur !== S.currency ? cur + " · " : "";
+        const rateStr = (+i.rate) ? " · " + (+i.rate) + "%/yr" : "";
+        const tail = i.contrib ? " · " + fmtCur(+i.contrib, cur) + "/mo" : (i.cost ? " · cost " + fmtCur(+i.cost, cur) : "");
+        return rowHTML("invest", i, `${fmtCur(+i.value || 0, cur)}<br><span class="fq" style="color:${g >= 0 ? "var(--green-deep)" : "var(--red-deep)"}">${gp == null ? "" : (g >= 0 ? "▲ " : "▼ ") + Math.abs(gp) + "%"}</span>`,
+          badge + (i.type || "Investment") + rateStr + tail);
       }).join("")}</div>
-      <p class="hint">Tap a holding to update its value — that's how gains stay honest.</p>`
+      <p class="hint">Tap a holding to update its value. Totals convert other currencies to ${S.currency} at an approximate rate.</p>`
       : emptyState("No investments yet", "Track ETFs, retirement accounts, crypto — value vs what you paid.", "＋ Add investment", "invest-add")}
     </div>
     <button class="fab" data-act="invest-add">＋ Add investment</button>`;
@@ -966,15 +987,23 @@ function expenseForm(it) {
 }
 
 function investForm(it) {
-  const isNew = !it; it = it || { name: "", icon: "🌐", value: "", cost: "", contrib: "" };
+  const isNew = !it; it = it || { name: "", icon: "🌐", value: "", cost: "", contrib: "", type: "ETF", rate: "", currency: S.currency };
+  const cur = it.currency || S.currency, typ = it.type || "ETF";
   openSheet(`<h3>${isNew ? "Add investment" : "Edit " + esc(it.name)}</h3>
   <form data-form="invest" data-id="${it.id || ""}">
-    <div class="field"><label for="f-name">Name</label><input id="f-name" name="name" required value="${esc(it.name)}" placeholder="ETF, retirement fund, crypto…"></div>
+    <div class="field"><label for="f-name">Name</label><input id="f-name" name="name" required value="${esc(it.name)}" placeholder="ETF, long-term fund, crypto…"></div>
     <div class="two-col">
-      <div class="field"><label for="f-val">Current value</label><input id="f-val" name="value" type="number" step="any" inputmode="decimal" required value="${esc(it.value)}"></div>
-      <div class="field"><label for="f-cost">Cost basis</label><input id="f-cost" name="cost" type="number" step="any" inputmode="decimal" value="${esc(it.cost)}"></div>
+      <div class="field"><label for="f-type">Type</label><select id="f-type" name="type">${INV_TYPES.map(x => `<option value="${x}" ${typ === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
+      <div class="field"><label for="f-cur">Currency</label><select id="f-cur" name="currency">${CURRENCIES().map(c => `<option value="${c}" ${cur === c ? "selected" : ""}>${c}</option>`).join("")}</select></div>
     </div>
-    <div class="field"><label for="f-contrib">Monthly contribution</label><input id="f-contrib" name="contrib" type="number" step="any" inputmode="decimal" value="${esc(it.contrib || "")}"></div>
+    <div class="two-col">
+      <div class="field"><label for="f-val">Amount / value</label><input id="f-val" name="value" type="number" step="any" inputmode="decimal" required value="${esc(it.value)}"></div>
+      <div class="field"><label for="f-rate">Interest / return %</label><input id="f-rate" name="rate" type="number" step="any" inputmode="decimal" placeholder="0" value="${esc(it.rate || "")}"></div>
+    </div>
+    <div class="two-col">
+      <div class="field"><label for="f-cost">Cost basis</label><input id="f-cost" name="cost" type="number" step="any" inputmode="decimal" value="${esc(it.cost)}"></div>
+      <div class="field"><label for="f-contrib">Monthly contribution</label><input id="f-contrib" name="contrib" type="number" step="any" inputmode="decimal" value="${esc(it.contrib || "")}"></div>
+    </div>
     ${emojiPicker(it.icon)}
     <input type="hidden" name="icon" value="${esc(it.icon)}">
     <div class="sheet-actions"><button type="button" class="btn btn-ghost" data-act="close">Cancel</button><button class="btn btn-primary">${isNew ? "Add investment" : "Save"}</button></div>
@@ -1235,7 +1264,7 @@ document.addEventListener("submit", e => {
     const it = id ? S[list].find(x => x.id === id) : { id: uid() };
     if (kind === "income") Object.assign(it, { name: d.name.trim(), icon: d.icon, amount: parseFloat(d.amount) || 0, freq: d.freq, notes: d.notes || "" });
     if (kind === "expense") Object.assign(it, { name: d.name.trim(), icon: d.icon, amount: parseFloat(d.amount) || 0, freq: d.freq, group: d.group, due: parseInt(d.due) || "", notes: d.notes || "" });
-    if (kind === "invest") Object.assign(it, { name: d.name.trim(), icon: d.icon, value: parseFloat(d.value) || 0, cost: parseFloat(d.cost) || 0, contrib: parseFloat(d.contrib) || 0 });
+    if (kind === "invest") Object.assign(it, { name: d.name.trim(), icon: d.icon, value: parseFloat(d.value) || 0, cost: parseFloat(d.cost) || 0, contrib: parseFloat(d.contrib) || 0, type: d.type || "ETF", rate: parseFloat(d.rate) || 0, currency: d.currency || S.currency });
     if (kind === "asset") Object.assign(it, { name: d.name.trim(), icon: d.icon, value: parseFloat(d.value) || 0, liability: !!d.liability, notes: d.notes || "" });
     if (!id) S[list].push(it);
     const KINDN = { income: "income source", expense: "expense", invest: "investment", asset: "asset" };
