@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+._*
+*.webloc
+
+# local tooling / editor config
+.claude/
+
+# design reference images (not part of the app)
+references/
+
+# local data backups exported from the app
+chanchito-*.xls
+chanchito-backup-*.json
