@@ -61,7 +61,15 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,[t
 .topbar .brandmark{width:36px;flex-shrink:0}
 .s-greet{font-family:var(--display);font-weight:700;font-size:23px;letter-spacing:-.02em;line-height:1.15}
 .s-sub{font-size:12.5px;color:var(--ink-55)}
-.iconbtn{margin-left:auto;width:38px;height:38px;border-radius:50%;border:1.5px solid var(--line);background:var(--paper);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.iconbtn{margin-left:auto;width:38px;height:38px;border-radius:50%;border:1.5px solid var(--line);background:var(--paper);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative}
+.topbar-actions{margin-left:auto;display:flex;gap:8px}
+.topbar-actions .iconbtn{margin-left:0}
+.badge{position:absolute;top:-5px;right:-5px;min-width:19px;height:19px;padding:0 4px;border-radius:99px;background:var(--red);color:#fff;font-family:var(--display);font-weight:700;font-size:10.5px;display:flex;align-items:center;justify-content:center;border:2px solid var(--cream)}
+.alertcard{border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:10px;background:var(--paper)}
+.alertcard .ah{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.alertcard .ah b{font-family:var(--display);font-size:14.5px}
+.alertcard .ah .ae{font-size:17px}
+.alertcard p{margin:0 0 11px;font-size:13px;color:var(--ink-70);line-height:1.5}
 .card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px}
 .card.clay{background:var(--clay);border-color:transparent}
 .card.dark{background:var(--ink);color:var(--cream);border-color:transparent}
@@ -335,8 +343,10 @@ let trash = null, trashTimer = null;
 function blank() {
   return { onboarded: false, region: "CR", currency: "CRC", locale: "es-CR",
     incomes: [], expenses: [], investments: [], assets: [], goals: [], feeds: [], snapshots: {},
-    log: [], reviewedYm: "", remind: true };
+    log: [], reviewedYm: "", remind: true,
+    alerts: { bom: true, eod: true, eom: true, email: "", seen: {} } };
 }
+function A() { if (!S.alerts) S.alerts = { bom: true, eod: true, eom: true, email: "", seen: {} }; if (!S.alerts.seen) S.alerts.seen = {}; return S.alerts; }
 function load() {
   try { const d = JSON.parse(localStorage.getItem(KEY)); if (d && d.incomes) return Object.assign(blank(), d); } catch (e) {}
   return blank();
@@ -436,40 +446,137 @@ function stats() {
   return { income, spent, saved, rate, subs, subTotal, invested, invCost, gain: invested - invCost, contrib, assetsT, liab, net, liquid, largest, prev };
 }
 
+// food/dining split (used by snapshots + insights)
+function foodBuckets() {
+  const act = a => a.filter(x => !x.archived);
+  const isDining = e => /restaur|coffee|caf|delivery|take ?out|uber ?eats|rappi|doordash|didi|domicilio|dining|comida r[aá]pida/i.test(e.name);
+  const isGro = e => /grocer|supermerc|market|mandado|despensa|feria|food/i.test(e.name);
+  let dining = 0, gro = 0;
+  act(S.expenses).forEach(e => { if (isDining(e)) dining += monthly(e); else if (isGro(e)) gro += monthly(e); });
+  return { dining, groceries: gro, food: dining + gro };
+}
+
 function snapshot() {
-  const t = stats();
-  S.snapshots[ym()] = { income: Math.round(t.income), spent: Math.round(t.spent), invested: Math.round(t.invested), net: Math.round(t.net) };
+  const t = stats(), fb = foodBuckets();
+  const act = a => a.filter(x => !x.archived);
+  const grp = g => act(S.expenses).filter(e => e.group === g).reduce((s, e) => s + monthly(e), 0);
+  S.snapshots[ym()] = {
+    income: Math.round(t.income), spent: Math.round(t.spent), invested: Math.round(t.invested), net: Math.round(t.net),
+    subs: Math.round(t.subTotal), food: Math.round(fb.food), dining: Math.round(fb.dining), fixed: Math.round(grp("fixed"))
+  };
+}
+
+// ---------- alerts ----------
+function dueAlerts() {
+  const a = A(), out = [], now = new Date();
+  const d = now.getDate(), hr = now.getHours(), cur = ym(now);
+  const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysLeft = dim - d;
+  const today = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+  const mn = monthName(cur).split(" ")[0];
+  if (a.bom && d <= 3) { const k = "bom-" + cur; if (!a.seen[k]) out.push({ key: k, icon: "🗓", title: "New month — tune your budget", body: `A fresh ${mn}. Review your expenses and check for price hikes or subscriptions you meant to cancel.`, cta: { label: "Review spending", act: "nav-spend" } }); }
+  if (a.eod && hr >= 18) { const k = "eod-" + today; if (!a.seen[k]) out.push({ key: k, icon: "🌙", title: "Today's almost over", body: "Have you entered all of today's expenses? A quick check keeps your chanchito honest.", cta: { label: "Add expense", act: "expense-add" } }); }
+  if (a.eom && daysLeft <= 2) { const k = "eom-" + cur; if (!a.seen[k]) out.push({ key: k, icon: "📊", title: `${mn} is ending`, body: `Export this month's data so nothing gets lost${a.email ? " — or email yourself the report" : ""}.`, cta: { label: "Export Excel", act: "export-excel" } }); }
+  return out;
+}
+function fireNotifications() {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  dueAlerts().forEach(al => {
+    const sk = "chn-" + al.key;
+    if (!sessionStorage.getItem(sk)) { try { new Notification("Chanchito 🐷", { body: al.title + " — " + al.body, tag: al.key }); } catch (e) {} sessionStorage.setItem(sk, "1"); }
+  });
+}
+function emailReport() {
+  const a = A(); const email = (($("#al-email") && $("#al-email").value) || a.email || "").trim();
+  a.email = email;
+  const t = stats(), cur = ym();
+  const topExp = S.expenses.filter(e => !e.archived).slice().sort((x, y) => monthly(y) - monthly(x)).slice(0, 5);
+  const goals = S.goals.filter(g => !g.archived);
+  const L = [];
+  L.push(`Chanchito — ${monthName(cur)} report`, "");
+  L.push(`Income:     ${fmt(t.income)}/mo`);
+  L.push(`Spending:   ${fmt(t.spent)}/mo (${t.income ? Math.round(t.spent / t.income * 100) : 0}% of income)`);
+  L.push(`Saved:      ${fmt(t.saved)}/mo (${Math.round(t.rate * 100)}% savings rate)`);
+  L.push(`Invested:   ${fmt(t.invested)} (${t.gain >= 0 ? "+" : "−"}${fmt(Math.abs(t.gain))} vs cost)`);
+  L.push(`Net worth:  ${fmt(t.net)}`, "");
+  if (topExp.length) { L.push("Top expenses:"); topExp.forEach(e => L.push(`  • ${e.name} — ${fmt(monthly(e))}/mo`)); L.push(""); }
+  if (goals.length) { L.push("Goals:"); goals.forEach(g => L.push(`  • ${g.name} — ${fmt(g.saved)} of ${fmt(g.target)} (${Math.round(clamp(g.saved / g.target, 0, 1) * 100)}%)`)); L.push(""); }
+  L.push("— sent from Chanchito 🐷");
+  const href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent("Chanchito — " + monthName(cur) + " report")}&body=${encodeURIComponent(L.join("\n"))}`;
+  const el = document.createElement("a"); el.href = href; el.click();
+  logChange("Emailed monthly report"); save();
 }
 
 function insights() {
   const t = stats(), out = [];
-  const video = t.subs.filter(e => /netflix|disney|prime|apple tv|hbo|max|paramount|crunchy|hulu|streaming/i.test(e.name));
-  const music = t.subs.filter(e => /spotify|apple music|youtube music|tidal|deezer/i.test(e.name));
-  if (video.length >= 3) {
-    const cheap = video.slice().sort((a, b) => monthly(a) - monthly(b))[0];
-    out.push({ tag: "watch", html: `You subscribe to <b>${video.length} video streaming services</b>. Dropping one — say ${esc(cheap.name)} — frees about <b class="num">${fmt(monthly(cheap) * 12)}/year</b>.` });
+  const act = a => a.filter(x => !x.archived);
+  const fb = foodBuckets();
+  const cur = S.snapshots[ym()];
+
+  // video services — the "rotate one at a time" idea
+  const video = t.subs.filter(e => /netflix|disney|prime|apple tv|hbo|max|paramount|crunchy|hulu|peacock|star\+|streaming/i.test(e.name));
+  const music = t.subs.filter(e => /spotify|apple music|youtube music|tidal|deezer|amazon music/i.test(e.name));
+  if (video.length >= 2) {
+    const vtot = video.reduce((s, e) => s + monthly(e), 0);
+    const keep = video.slice().sort((a, b) => monthly(b) - monthly(a))[0];
+    out.push({ p: 1, tag: "watch", html: `You pay for <b>${video.length} video services</b> (${video.map(v => esc(v.name)).join(", ")}) — <b class="num">${fmt(vtot)}/mo</b>. Try rotating them: keep one a month, binge its catalog, pause the rest. Riding just ${esc(keep.name)} would free about <b class="num">${fmt((vtot - monthly(keep)) * 12)}/yr</b>.` });
   }
-  if (music.length >= 2) out.push({ tag: "watch", html: `You pay for <b>${music.length} music services</b>. Keeping just one saves <b class="num">${fmt(monthly(music.sort((a, b) => monthly(a) - monthly(b))[0]) * 12)}/year</b>.` });
-  if (t.income > 0 && t.subTotal / t.income > 0.06) out.push({ tag: "watch", html: `Subscriptions total <b class="num">${fmt(t.subTotal)}/mo</b> — ${Math.round(t.subTotal / t.income * 100)}% of income. A quick prune usually finds one you won't miss.` });
-  if (t.rate >= 0.2) out.push({ tag: "ach", html: `Savings rate of <b>${Math.round(t.rate * 100)}%</b> — excellent. Your chanchito is eating well. 🌊` });
-  else if (t.rate > 0.08) out.push({ tag: "ins", html: `You're saving <b>${Math.round(t.rate * 100)}%</b> of income. Nudging it to 20% adds <b class="num">${fmt(Math.max(0, t.income * 0.2 - t.saved))}/mo</b> toward your goals.` });
-  else if (t.income > 0 && t.largest) out.push({ tag: "ins", html: `Money is tight this month. Your largest expense is <b>${esc(t.largest.name)}</b> at <b class="num">${fmt(monthly(t.largest))}/mo</b> — a good first place to look, gently.` });
+  if (music.length >= 2) { const cheap = music.slice().sort((a, b) => monthly(a) - monthly(b))[0]; out.push({ p: 2, tag: "watch", html: `Two music services (${music.map(m => esc(m.name)).join(", ")}) play the same songs. Keeping one saves <b class="num">${fmt(monthly(cheap) * 12)}/yr</b>.` }); }
+
+  // food / dining
+  if (fb.food > 0) {
+    const diningPct = Math.round(fb.dining / fb.food * 100);
+    if (fb.dining > 0 && diningPct >= 35) out.push({ p: 2, tag: "ins", html: `Food runs <b class="num">${fmt(fb.food)}/mo</b>, and <b>${diningPct}%</b> of it is eating out (<b class="num">${fmt(fb.dining)}</b>). Cooking two more nights a week could keep about <b class="num">${fmt(fb.dining * 0.25)}/mo</b> in your pocket.` });
+    else if (t.income && fb.food / t.income > 0.18) out.push({ p: 3, tag: "ins", html: `Food is <b class="num">${fmt(fb.food)}/mo</b> — ${Math.round(fb.food / t.income * 100)}% of income. A weekly meal plan is the easiest lever here.` });
+  }
+  if (t.prev && t.prev.food != null && cur) {
+    if (cur.food - t.prev.food > 10) out.push({ p: 2, tag: "watch", html: `You're spending <b class="num">${fmt(cur.food - t.prev.food)}</b> more on food than last month.` });
+    else if (t.prev.food - cur.food > 10) out.push({ p: 4, tag: "ach", html: `Food spend is down <b class="num">${fmt(t.prev.food - cur.food)}</b> from last month. Nice.` });
+  }
+
+  if (t.income > 0 && t.subTotal / t.income > 0.06) out.push({ p: 3, tag: "watch", html: `Subscriptions total <b class="num">${fmt(t.subTotal)}/mo</b> — ${Math.round(t.subTotal / t.income * 100)}% of income. A quick prune usually finds one you won't miss.` });
+
+  // savings rate
+  if (t.income > 0) {
+    if (t.rate >= 0.2) out.push({ p: 4, tag: "ach", html: `Savings rate of <b>${Math.round(t.rate * 100)}%</b> — excellent. Your chanchito is eating well. 🌊` });
+    else if (t.rate > 0.05) out.push({ p: 3, tag: "ins", html: `You're saving <b>${Math.round(t.rate * 100)}%</b> of income. Nudging to 20% means <b class="num">${fmt(Math.max(0, t.income * 0.2 - t.saved))}/mo</b> more toward goals.` });
+    else if (t.saved < 0) out.push({ p: 1, tag: "watch", html: `You're <b class="num">${fmt(-t.saved)}/mo</b> over budget. Start with your largest line — ${t.largest ? esc(t.largest.name) + " at " + fmt(monthly(t.largest)) : "your top expense"}.` });
+  }
+
+  // emergency runway + idle cash
   const ef = t.spent > 0 ? t.liquid / t.spent : 0;
-  if (ef >= 6) out.push({ tag: "ach", html: `<b>Emergency cushion complete</b> — ${ef.toFixed(0)} months of expenses in liquid savings. You could safely invest <b class="num">${fmt(Math.max(0, t.saved * 0.4))}/mo</b> more.` });
-  else if (ef >= 3) out.push({ tag: "ins", html: `You hold <b>${ef.toFixed(1)} months</b> of expenses in liquid savings. Six months paints the wave.` });
-  else if (t.spent > 0) out.push({ tag: "watch", html: `Liquid savings cover <b>${ef.toFixed(1)} months</b> of expenses. Building toward 3 months is the safest first goal.` });
-  if (t.prev) {
-    const dS = t.spent - t.prev.spent;
-    if (dS < -10) out.push({ tag: "ach", html: `You spent <b class="num">${fmt(-dS)}</b> less than last month. Quiet, steady, effective.` });
-    else if (dS > t.prev.spent * 0.12) out.push({ tag: "watch", html: `Spending is up <b class="num">${fmt(dS)}</b> vs last month. Worth a two-minute look — no judgment.` });
-    if (t.net > t.prev.net) out.push({ tag: "fc", html: `Net worth grew <b class="num">${fmt(t.net - t.prev.net)}</b> this month. At this pace you'd add <b class="num">${fmt((t.net - t.prev.net) * 12)}</b> in a year.` });
+  if (t.spent > 0) {
+    if (ef >= 6) out.push({ p: 4, tag: "ach", html: `<b>Emergency cushion complete</b> — ${ef.toFixed(0)} months of expenses in cash. You could safely invest <b class="num">${fmt(Math.max(0, t.saved * 0.4))}/mo</b> more.` });
+    else if (ef >= 3) out.push({ p: 3, tag: "ins", html: `You hold <b>${ef.toFixed(1)} months</b> of expenses in liquid savings. Six months paints the wave.` });
+    else out.push({ p: 2, tag: "watch", html: `Liquid savings cover only <b>${ef.toFixed(1)} months</b> of expenses. Building toward 3 months is the safest first goal.` });
+    const idle = t.liquid - t.spent * 6;
+    if (idle > t.spent) out.push({ p: 3, tag: "fc", html: `About <b class="num">${fmt(idle)}</b> sits idle beyond a 6-month cushion. Invested at 5% that's roughly <b class="num">${fmt(idle * 0.05)}/yr</b> left on the table.` });
   }
+
+  // month-over-month
+  if (t.prev) {
+    if (t.net > t.prev.net) out.push({ p: 4, tag: "fc", html: `Net worth grew <b class="num">${fmt(t.net - t.prev.net)}</b> this month — about <b class="num">${fmt((t.net - t.prev.net) * 12)}</b>/yr at this pace.` });
+    const dS = t.spent - t.prev.spent;
+    if (dS > t.prev.spent * 0.12) out.push({ p: 2, tag: "watch", html: `Spending is up <b class="num">${fmt(dS)}</b> vs last month. Worth a two-minute look — no judgment.` });
+    else if (dS < -10) out.push({ p: 4, tag: "ach", html: `You spent <b class="num">${fmt(-dS)}</b> less than last month. Quiet, steady, effective.` });
+  }
+
+  // investments
+  if (t.invCost > 0 && t.gain !== 0) out.push({ p: 3, tag: t.gain > 0 ? "ins" : "fc", html: t.gain > 0 ? `Investments are up <b class="num">${fmt(t.gain)}</b> (${(t.gain / t.invCost * 100).toFixed(1)}%) over what you put in.` : `Investments are down <b class="num">${fmt(-t.gain)}</b> vs cost — normal weather. Your ${fmt(t.contrib)}/mo keeps buying in.` });
+  const rated = act(S.investments).filter(i => +i.rate > 0);
+  if (rated.length) { const annual = rated.reduce((s, i) => s + toBase(+i.value || 0, i.currency) * (+i.rate / 100), 0); if (annual > 0) out.push({ p: 3, tag: "fc", html: `Your rate-bearing holdings (${rated.map(i => esc(i.name.split(" ")[0])).join(", ")}) should throw off about <b class="num">${fmt(annual)}/yr</b> in interest at their current rates.` }); }
+
+  // goals pacing
   S.goals.filter(g => !g.archived && g.saved < g.target).forEach(g => {
-    const rec = recMonthly(g);
-    if (rec != null) out.push({ tag: "fc", html: `<b>${esc(g.icon)} ${esc(g.name)}</b>: feeding <b class="num">${fmt(rec)}/mo</b> lands it right on time (${new Date(g.deadline + "T12:00").toLocaleDateString(S.locale, { month: "short", year: "numeric" })}).` });
+    const rec = recMonthly(g); if (rec == null) return;
+    const pace = t.saved > 0 ? (rec <= t.saved ? " — your current savings cover it" : " — a stretch at your current pace") : "";
+    out.push({ p: 3, tag: "fc", html: `<b>${esc(g.icon)} ${esc(g.name)}</b>: <b class="num">${fmt(rec)}/mo</b> lands it by ${new Date(g.deadline + "T12:00").toLocaleDateString(S.locale, { month: "short", year: "numeric" })}${pace}.` });
   });
-  if (t.gain !== 0 && t.invCost > 0) out.push({ tag: t.gain > 0 ? "ins" : "fc", html: t.gain > 0 ? `Investments are up <b class="num">${fmt(t.gain)}</b> (${(t.gain / t.invCost * 100).toFixed(1)}%) over what you put in.` : `Investments are down <b class="num">${fmt(-t.gain)}</b> vs cost — normal weather. Your ${fmt(t.contrib)}/mo keeps buying at lower prices.` });
-  return out.slice(0, 6);
+
+  if (t.largest && t.income) out.push({ p: 5, tag: "ins", html: `Your biggest line is <b>${esc(t.largest.name)}</b> at <b class="num">${fmt(monthly(t.largest))}/mo</b> — ${Math.round(monthly(t.largest) / t.income * 100)}% of income.` });
+
+  out.sort((a, b) => a.p - b.p);
+  return out.slice(0, 8);
 }
 
 // ---------- Excel export (SpreadsheetML — opens in Excel/Numbers/Sheets) ----------
@@ -575,6 +682,7 @@ function answer(q) {
   if (/subscri|netflix|spotify|stream/.test(l)) return `Subscriptions total ${fmt(t.subTotal)}/mo (${fmt(t.subTotal * 12)}/yr) across ${t.subs.length} services.` + (t.subs.length ? ` Largest: ${t.subs.sort((a, b) => monthly(b) - monthly(a))[0].name}.` : "");
   if (/net worth|worth|patrimonio/.test(l)) return `Net worth is ${fmt(t.net)} — ${fmt(t.assetsT)} in assets minus ${fmt(t.liab)} in liabilities.` + (t.prev ? ` That's ${t.net >= t.prev.net ? "up " + fmt(t.net - t.prev.net) : "down " + fmt(t.prev.net - t.net)} vs last month.` : "");
   if (/invest|invers|portfolio/.test(l)) return `You hold ${fmt(t.invested)} in investments, ${t.gain >= 0 ? "up" : "down"} ${fmt(Math.abs(t.gain))} vs cost, contributing ${fmt(t.contrib)}/mo.`;
+  if (/food|grocer|dining|restaurant|\beat\b|comida/.test(l)) { const fb = foodBuckets(); return fb.food ? `Food is ${fmt(fb.food)}/mo — ${fmt(fb.groceries)} groceries + ${fmt(fb.dining)} eating out${fb.food ? ` (${Math.round(fb.dining / fb.food * 100)}% dining out)` : ""}. ${fb.dining > fb.groceries ? "Cooking a couple more nights would move the needle most." : "Nicely balanced — most of it is home cooking."}` : "I don't see food categories yet. Add groceries and restaurants and I'll track the split."; }
   if (/spend|spent|gasto|expense/.test(l)) return `Monthly spending is ${fmt(t.spent)} — ${t.income ? Math.round(t.spent / t.income * 100) + "% of income" : "add income sources for context"}. Largest: ${t.largest ? t.largest.name + " at " + fmt(monthly(t.largest)) : "—"}.`;
   if (/income|earn|salario|ingreso/.test(l)) return `Monthly income is ${fmt(t.income)} across ${S.incomes.filter(i => !i.archived).length} sources.`;
   if (/emergency|emergencia|runway|cushion/.test(l)) { const m = t.spent ? (t.liquid / t.spent) : 0; return `Liquid savings of ${fmt(t.liquid)} cover ${m.toFixed(1)} months of expenses. ${m >= 6 ? "Fully cushioned — ¡pura vida!" : "Six months is the classic target."}`; }
@@ -611,9 +719,13 @@ function renderNav() {
 
 // ---------- render: shared bits ----------
 function topbar(title, sub, gear) {
+  const n = gear ? dueAlerts().length : 0;
   return `<div class="topbar">
     <div><div class="s-greet">${title}</div><div class="s-sub">${sub}</div></div>
-    ${gear ? `<button class="iconbtn" data-act="settings" aria-label="Settings">⚙︎</button>` : ""}
+    ${gear ? `<div class="topbar-actions">
+      <button class="iconbtn" data-act="alerts" aria-label="Alerts${n ? " (" + n + " new)" : ""}">🔔${n ? `<span class="badge">${n}</span>` : ""}</button>
+      <button class="iconbtn" data-act="settings" aria-label="Settings">⚙︎</button>
+    </div>` : ""}
   </div>`;
 }
 function rowHTML(kind, it, right, sub) {
@@ -1072,6 +1184,32 @@ function rowActions(kind, it) {
   </div>`);
 }
 
+function alertsSheet() {
+  const a = A(), due = dueAlerts();
+  const toggle = (k, icon, label) => `<button class="btn ${a[k] ? "btn-clay" : "btn-ghost"}" data-toggle-alert="${k}">${icon} ${label} · ${a[k] ? "On" : "Off"}</button>`;
+  openSheet(`<h3>Alerts</h3>
+  ${due.length ? due.map(al => `<div class="alertcard">
+    <div class="ah"><span class="ae">${al.icon}</span><b>${esc(al.title)}</b></div>
+    <p>${esc(al.body)}</p>
+    <div class="ai-actions"><button class="a1" data-alert-do="${al.key}::${al.cta.act}">${esc(al.cta.label)}</button><button class="a2" data-alert-dismiss="${al.key}">Dismiss</button></div>
+  </div>`).join("") : `<p class="hint" style="margin:2px 0 4px">You're all caught up. 🌊</p>`}
+  <div class="wavesep" style="margin:16px 0"></div>
+  <span class="klabel" style="opacity:1;color:var(--ink-55)">When should I nudge you?</span>
+  <div class="rowactions" style="margin-top:10px">
+    ${toggle("bom", "🗓", "Beginning of month — tune the budget")}
+    ${toggle("eod", "🌙", "End of day — log today's expenses")}
+    ${toggle("eom", "📊", "End of month — export your data")}
+  </div>
+  <div class="wavesep" style="margin:18px 0"></div>
+  <span class="klabel" style="opacity:1;color:var(--ink-55)">Monthly report by email</span>
+  <div class="field" style="margin-top:10px"><label for="al-email">Your email</label><input id="al-email" type="email" inputmode="email" placeholder="you@email.com" value="${esc(a.email || "")}"></div>
+  <div class="rowactions">
+    <button class="btn btn-primary" data-act="email-report">✉️ Email me this month's report</button>
+    ${typeof Notification !== "undefined" && Notification.permission !== "granted" ? `<button class="btn btn-ghost" data-act="notif-enable">Enable device notifications</button>` : ""}
+  </div>
+  <p class="hint">Notifications show while the app is open. Email opens your mail app with the report ready to send (attach the Excel export for the full sheet).</p>`);
+}
+
 function settingsSheet() {
   openSheet(`<h3>Settings</h3>
   <div class="field"><label for="set-region">Country / currency</label>
@@ -1143,15 +1281,26 @@ function removeItem(kind, id) {
 function render() {
   renderNav();
   if (!S.onboarded) return renderOnboard();
-  snapshot(); save();
+  snapshot(); save(); fireNotifications();
   ({ home: renderHome, income: renderIncome, spend: renderSpend, grow: renderGrow, ai: renderAI, goal: renderGoal }[route.tab] || renderHome)();
 }
 function go(tab) { route.tab = tab; route.filter = "all"; $("#screen").scrollTop = 0; window.scrollTo(0, 0); render(); }
 
 // ---------- events (delegation) ----------
 document.addEventListener("click", e => {
-  const t = e.target.closest("[data-nav],[data-act],[data-region],[data-filter],[data-growsub],[data-goal],[data-row],[data-feed],[data-emoji],[data-ra],[data-preset-tgl],[data-archive-exp],[data-del-goal]");
+  const t = e.target.closest("[data-nav],[data-act],[data-region],[data-filter],[data-growsub],[data-goal],[data-row],[data-feed],[data-emoji],[data-ra],[data-preset-tgl],[data-archive-exp],[data-del-goal],[data-toggle-alert],[data-alert-dismiss],[data-alert-do]");
   if (!t) return;
+
+  if (t.dataset.toggleAlert) { const a = A(); a[t.dataset.toggleAlert] = !a[t.dataset.toggleAlert]; save(); alertsSheet(); return; }
+  if (t.dataset.alertDismiss) { A().seen[t.dataset.alertDismiss] = true; save(); alertsSheet(); render(); return; }
+  if (t.dataset.alertDo) {
+    const [key, act2] = t.dataset.alertDo.split("::");
+    A().seen[key] = true; save(); closeSheet();
+    if (act2 === "nav-spend") return go("spend");
+    if (act2 === "expense-add") { render(); return expenseForm(); }
+    if (act2 === "export-excel") { exportExcel(); render(); return toast("Saved chanchito-" + ym() + ".xls 📊"); }
+    render(); return;
+  }
 
   if (t.dataset.nav) return go(t.dataset.nav);
   if (t.dataset.region) { ob.region = t.dataset.region; ob.chosen = null; return renderOnboard(); }
@@ -1193,6 +1342,8 @@ document.addEventListener("click", e => {
   if (act === "close") return closeSheet();
   if (act === "celebrate-close") return $("#celebrate").classList.remove("open");
   if (act === "settings") return settingsSheet();
+  if (act === "alerts") return alertsSheet();
+  if (act === "email-report") { const a = A(); const em = ($("#al-email") && $("#al-email").value || "").trim(); if (!em) { toast("Add your email first"); return; } emailReport(); toast("Opening your mail app…"); return; }
   if (act === "income-add") return incomeForm();
   if (act === "expense-add") return expenseForm();
   if (act === "invest-add") return investForm();
@@ -1233,7 +1384,7 @@ document.addEventListener("click", e => {
   if (act === "export-excel") { exportExcel(); toast("Saved chanchito-" + ym() + ".xls 📊"); return; }
   if (act === "review-done") { const rv = reviewInfo(); if (rv) { S.reviewedYm = rv.target; save(); render(); } return; }
   if (act === "toggle-remind") { S.remind = !S.remind; save(); settingsSheet(); return; }
-  if (act === "notif-enable") { if (typeof Notification !== "undefined") Notification.requestPermission().then(() => settingsSheet()); return; }
+  if (act === "notif-enable") { if (typeof Notification !== "undefined") Notification.requestPermission().then(() => { if ($("#al-email") !== null || $("#sheet")) alertsSheet(); }); return; }
   if (act === "export") {
     const blob = new Blob([JSON.stringify(S, null, 2)], { type: "application/json" });
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
