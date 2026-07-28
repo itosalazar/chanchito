@@ -51,8 +51,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,[t
 .bn svg{width:20px;height:20px}
 .bn.on{color:var(--ink)}
 .bn.on .icw{background:var(--ink);border-color:var(--ink);color:var(--cream)}
-.bn.ai{position:relative;top:-16px}
-.bn.ai .aibtn{width:56px;height:56px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 18px rgba(225,75,46,.5)}
+.bn.ai{position:relative;top:-14px}
+.bn.ai::before{content:"";position:absolute;left:50%;top:-11px;transform:translateX(-50%);width:78px;height:78px;border-radius:50%;background:var(--clay);z-index:0}
+.bn.ai .aibtn{position:relative;z-index:1;width:56px;height:56px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px rgba(225,75,46,.45)}
 .bn.ai .aibtn svg{width:32px;height:auto}
 .bn.ai.on .aibtn{box-shadow:0 0 0 3px var(--ink),0 8px 18px rgba(225,75,46,.5)}
 
