@@ -120,6 +120,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,[t
 .btn.full{width:100%}
 .section-h{display:flex;align-items:baseline;justify-content:space-between;margin:6px 0 8px}
 .section-h .klabel{opacity:1;color:var(--ink-55)}
+.cattotals{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cattot{display:flex;flex-direction:column;gap:3px;align-items:flex-start;padding:11px 14px;border:1px solid var(--line);border-radius:14px;background:var(--paper);cursor:pointer;text-align:left}
+.cattot:active{transform:scale(.98)}
+.cattot .ct-l{font-family:var(--display);font-weight:600;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-55)}
+.cattot .ct-v{font-family:var(--display);font-weight:700;font-size:16px;font-variant-numeric:tabular-nums}
+.cattot .ct-mo{font-size:10px;color:var(--ink-55);font-weight:600;margin-left:1px}
 .spark{display:flex;align-items:flex-end;gap:4px;height:44px;margin-top:12px}
 .spark i{flex:1;border-radius:4px 4px 2px 2px;background:rgba(35,31,24,.16);min-height:3px}
 .spark i.hot{background:var(--ink)}
@@ -915,6 +921,9 @@ function renderSpend() {
   const list = (f === "all" || f === "archived") ? base : base.filter(e => e.group === f);
   const video = t.subs.filter(e => /netflix|disney|prime|apple tv|hbo|max|paramount|crunchy|hulu/i.test(e.name));
   const pct = t.income > 0 ? clamp(t.spent / t.income, 0, 1) : 0;
+  const gTotal = g => S.expenses.filter(e => !e.archived && e.group === g).reduce((s, e) => s + monthly(e), 0);
+  const gCount = g => S.expenses.filter(e => !e.archived && e.group === g).length;
+  const GKEYS = ["fixed", "subscription", "variable", "fun"];
   $("#screen").innerHTML = `
   ${topbar("Spending", new Date().toLocaleDateString(S.locale, { month: "long", year: "numeric" }), true)}
   <div class="pad">
@@ -930,7 +939,8 @@ function renderSpend() {
       `<button class="pill ${f === k ? "on" : ""}" data-filter="${k}">${v}</button>`).join("")}
   </div>
   <div class="pad stack" style="margin-top:12px">
-    ${(f === "all" || f === "subscription") && t.subs.length ? `<div class="section-h"><span class="klabel">Subscriptions · ${fmt(t.subTotal)}/mo</span>${video.length >= 3 ? `<span style="font-size:11px;font-weight:600;color:var(--red-deep)">${video.length} video services</span>` : ""}</div>` : ""}
+    ${f === "all" && GKEYS.some(g => gCount(g)) ? `<div class="cattotals">${GKEYS.filter(g => gCount(g)).map(g => `<button class="cattot" data-filter="${g}"><span class="ct-l">${GROUPS[g]}</span><span class="ct-v num">${fmt(gTotal(g))}<span class="ct-mo">/mo</span></span></button>`).join("")}</div>` : ""}
+    ${GKEYS.includes(f) ? `<div class="section-h"><span class="klabel">${GROUPS[f]} · ${fmt(gTotal(f))}/mo · ${gCount(f)} item${gCount(f) === 1 ? "" : "s"}</span>${f === "subscription" && video.length >= 3 ? `<span style="font-size:11px;font-weight:600;color:var(--red-deep)">${video.length} video</span>` : ""}</div>` : ""}
     ${list.length ? `<div class="card" style="padding:6px 18px">${list.map(e =>
       rowHTML("expense", e, `${fmt(monthly(e))}<br><span class="fq">${e.freq !== "monthly" ? fmt(+e.amount) + " " + FREQ_LABEL[e.freq].toLowerCase() : "/mo"}</span>`,
         GROUPS[e.group] + (e.due ? ` · due ${e.due}${["st","nd","rd"][((e.due+90)%100-10)%10-1]||"th"}` : "") + (e.notes ? " · " + esc(e.notes) : ""))).join("")}</div>
