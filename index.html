@@ -126,6 +126,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,[t
 .cattot .ct-l{font-family:var(--display);font-weight:600;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-55)}
 .cattot .ct-v{font-family:var(--display);font-weight:700;font-size:16px;font-variant-numeric:tabular-nums}
 .cattot .ct-mo{font-size:10px;color:var(--ink-55);font-weight:600;margin-left:1px}
+.monthnav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 20px 12px;padding:7px;background:var(--paper);border:1px solid var(--line);border-radius:999px}
+.mn-arrow{width:34px;height:34px;border-radius:50%;border:none;background:var(--sand);font-size:18px;font-weight:700;cursor:pointer;color:var(--ink);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.mn-arrow:disabled{opacity:.28;cursor:default}
+.mn-arrow:active:not(:disabled){transform:scale(.9)}
+.mn-label{font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:-.01em;display:flex;align-items:center;gap:7px}
+.mn-now{font-family:var(--body);font-weight:600;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--green-deep);background:var(--green-soft);padding:2px 8px;border-radius:999px}
 .spark{display:flex;align-items:flex-end;gap:4px;height:44px;margin-top:12px}
 .spark i{flex:1;border-radius:4px 4px 2px 2px;background:rgba(35,31,24,.16);min-height:3px}
 .spark i.hot{background:var(--ink)}
@@ -415,9 +421,9 @@ function sampleData() {
   S.goals = [
     { id: uid(), name: "Japan Trip", icon: "✈️", target: 4000, saved: 2600, deadline: dl.toISOString().slice(0, 10), done: [] },
     { id: uid(), name: "New laptop", icon: "💻", target: 2400, saved: 900, deadline: dl2.toISOString().slice(0, 10), done: [] }];
-  // last-month snapshot so deltas have something to compare against
-  const prev = new Date(); prev.setMonth(prev.getMonth() - 1);
-  S.snapshots[ym(prev)] = { income: 5500, spent: 3660, invested: 23510, net: 59260 };
+  // last-month snapshot so deltas + the month navigator have history
+  S.snapshots[shiftYm(ym(), -1)] = { income: 5500, spent: 3660, invested: 23510, net: 59260, subs: 73, food: 760, dining: 300, fixed: 1600, cats: { fixed: 1600, subscription: 73, variable: 1120, fun: 867 } };
+  S.snapshots[shiftYm(ym(), -2)] = { income: 5500, spent: 3980, invested: 22100, net: 57050, subs: 73, food: 690, dining: 260, fixed: 1600, cats: { fixed: 1600, subscription: 73, variable: 1430, fun: 877 } };
 }
 
 // ---------- money ----------
@@ -462,7 +468,7 @@ function stats() {
   const net = assetsT - liab;
   const liquid = act(S.assets).filter(a => !a.liability && /check|saving|cash|emergency|efectivo|ahorro/i.test(a.name)).reduce((s, a) => s + (+a.value || 0), 0);
   const largest = act(S.expenses).slice().sort((a, b) => monthly(b) - monthly(a))[0] || null;
-  const prevK = (() => { const d = new Date(); d.setMonth(d.getMonth() - 1); return ym(d); })();
+  const prevK = shiftYm(ym(), -1);
   const prev = S.snapshots[prevK] || null;
   return { income, spent, saved, rate, subs, subTotal, invested, invCost, gain: invested - invCost, contrib, assetsT, liab, net, liquid, largest, prev };
 }
@@ -483,9 +489,11 @@ function snapshot() {
   const grp = g => act(S.expenses).filter(e => e.group === g).reduce((s, e) => s + monthly(e), 0);
   S.snapshots[ym()] = {
     income: Math.round(t.income), spent: Math.round(t.spent), invested: Math.round(t.invested), net: Math.round(t.net),
-    subs: Math.round(t.subTotal), food: Math.round(fb.food), dining: Math.round(fb.dining), fixed: Math.round(grp("fixed"))
+    subs: Math.round(t.subTotal), food: Math.round(fb.food), dining: Math.round(fb.dining), fixed: Math.round(grp("fixed")),
+    cats: { fixed: Math.round(grp("fixed")), subscription: Math.round(grp("subscription")), variable: Math.round(grp("variable")), fun: Math.round(grp("fun")) }
   };
 }
+function shiftYm(y, d) { const dt = new Date(y + "-15T12:00"); dt.setMonth(dt.getMonth() + d); return ym(dt); }
 
 // ---------- alerts ----------
 function dueAlerts() {
@@ -644,7 +652,7 @@ function reviewInfo() {
   const now = new Date(), cur = ym(now);
   const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const daysLeft = dim - now.getDate();
-  const pd = new Date(now); pd.setMonth(pd.getMonth() - 1); const prev = ym(pd);
+  const prev = shiftYm(cur, -1);
   let target = null, title = "";
   const mn = monthName(cur).split(" ")[0];
   if (daysLeft <= 2 && S.reviewedYm !== cur) {
@@ -917,15 +925,55 @@ function renderIncome() {
 function renderSpend() {
   const t = stats();
   const f = route.filter;
+  const GKEYS = ["fixed", "subscription", "variable", "fun"];
+  const viewMonth = route.month || ym();
+  const isCurrent = viewMonth === ym();
+  const months = Object.keys(S.snapshots).sort();
+  const earliest = months.length ? months[0] : ym();
+  const monthNav = `<div class="monthnav">
+    <button class="mn-arrow" data-month="prev" ${viewMonth > earliest ? "" : "disabled"} aria-label="Previous month">‹</button>
+    <div class="mn-label">${monthName(viewMonth)}${isCurrent ? ` <span class="mn-now">now</span>` : ""}</div>
+    <button class="mn-arrow" data-month="next" ${viewMonth < ym() ? "" : "disabled"} aria-label="Next month">›</button>
+  </div>`;
+
+  // ----- past month: read-only recap from the snapshot -----
+  if (!isCurrent) {
+    const s = S.snapshots[viewMonth];
+    const saved = s ? s.income - s.spent : 0;
+    const pct = s && s.income > 0 ? clamp(s.spent / s.income, 0, 1) : 0;
+    const catCards = s && s.cats ? GKEYS.filter(g => s.cats[g] > 0).map(g => `<div class="cattot" style="cursor:default"><span class="ct-l">${GROUPS[g]}</span><span class="ct-v num">${fmt(s.cats[g])}<span class="ct-mo">/mo</span></span></div>`).join("") : "";
+    $("#screen").innerHTML = `
+    ${topbar("Spending", "Past month · read-only", true)}
+    ${monthNav}
+    ${s ? `<div class="pad">
+      <div style="display:flex;align-items:baseline;gap:8px">
+        <div class="knum num" style="font-size:40px">${fmt(s.spent)}</div>
+        ${s.income ? `<span style="font-family:var(--display);font-weight:600;font-size:13px;color:var(--ink-55)" class="num">of ${fmt(s.income)}</span>` : ""}
+      </div>
+      <div class="bar" style="margin-top:8px"><i style="width:${Math.round(pct * 100)}%;background:var(--red)"></i></div>
+    </div>
+    ${SEPP}
+    <div class="pad stack" style="margin-top:4px">
+      <div class="card ${saved >= 0 ? "green" : "dark"}" style="padding:15px 18px">
+        <span class="klabel" style="opacity:.7">${saved >= 0 ? "Saved in " + monthName(viewMonth).split(" ")[0] : "Over budget"}</span>
+        <div class="knum sm num">${fmt(Math.abs(saved))}</div>
+      </div>
+      ${catCards ? `<span class="klabel" style="opacity:1;color:var(--ink-55)">By category</span><div class="cattotals">${catCards}</div>` : `<p class="hint">Category breakdown wasn't recorded for this month.</p>`}
+      <p class="hint">This is a snapshot of ${monthName(viewMonth)}. Tap › to return to your live budget.</p>
+    </div>` : `<div class="pad" style="margin-top:10px">${emptyState("Nothing recorded", "No spending was saved for " + monthName(viewMonth) + ".", "Back to this month", "month-now")}</div>`}`;
+    return;
+  }
+
+  // ----- current month: live, editable -----
   const base = S.expenses.filter(e => f === "archived" ? e.archived : !e.archived);
   const list = (f === "all" || f === "archived") ? base : base.filter(e => e.group === f);
   const video = t.subs.filter(e => /netflix|disney|prime|apple tv|hbo|max|paramount|crunchy|hulu/i.test(e.name));
   const pct = t.income > 0 ? clamp(t.spent / t.income, 0, 1) : 0;
   const gTotal = g => S.expenses.filter(e => !e.archived && e.group === g).reduce((s, e) => s + monthly(e), 0);
   const gCount = g => S.expenses.filter(e => !e.archived && e.group === g).length;
-  const GKEYS = ["fixed", "subscription", "variable", "fun"];
   $("#screen").innerHTML = `
-  ${topbar("Spending", new Date().toLocaleDateString(S.locale, { month: "long", year: "numeric" }), true)}
+  ${topbar("Spending", "Track it month by month", true)}
+  ${monthNav}
   <div class="pad">
     <div style="display:flex;align-items:baseline;gap:8px">
       <div class="knum num" style="font-size:40px">${fmt(t.spent)}</div>
@@ -1313,13 +1361,14 @@ function render() {
   snapshot(); save(); fireNotifications();
   ({ home: renderHome, income: renderIncome, spend: renderSpend, grow: renderGrow, ai: renderAI, goal: renderGoal }[route.tab] || renderHome)();
 }
-function go(tab) { route.tab = tab; route.filter = "all"; $("#screen").scrollTop = 0; window.scrollTo(0, 0); render(); }
+function go(tab) { route.tab = tab; route.filter = "all"; route.month = ym(); $("#screen").scrollTop = 0; window.scrollTo(0, 0); render(); }
 
 // ---------- events (delegation) ----------
 document.addEventListener("click", e => {
-  const t = e.target.closest("[data-nav],[data-act],[data-region],[data-filter],[data-growsub],[data-goal],[data-row],[data-feed],[data-emoji],[data-ra],[data-preset-tgl],[data-archive-exp],[data-del-goal],[data-toggle-alert],[data-alert-dismiss],[data-alert-do]");
+  const t = e.target.closest("[data-nav],[data-act],[data-region],[data-filter],[data-growsub],[data-goal],[data-row],[data-feed],[data-emoji],[data-ra],[data-preset-tgl],[data-archive-exp],[data-del-goal],[data-toggle-alert],[data-alert-dismiss],[data-alert-do],[data-month]");
   if (!t) return;
 
+  if (t.dataset.month) { if (t.disabled) return; route.month = shiftYm(route.month || ym(), t.dataset.month === "prev" ? -1 : 1); route.tab = "spend"; return render(); }
   if (t.dataset.toggleAlert) { const a = A(); a[t.dataset.toggleAlert] = !a[t.dataset.toggleAlert]; save(); alertsSheet(); return; }
   if (t.dataset.alertDismiss) { A().seen[t.dataset.alertDismiss] = true; save(); alertsSheet(); render(); return; }
   if (t.dataset.alertDo) {
@@ -1372,6 +1421,7 @@ document.addEventListener("click", e => {
   if (act === "celebrate-close") return $("#celebrate").classList.remove("open");
   if (act === "settings") return settingsSheet();
   if (act === "alerts") return alertsSheet();
+  if (act === "month-now") { route.month = ym(); route.tab = "spend"; return render(); }
   if (act === "email-report") { const a = A(); const em = ($("#al-email") && $("#al-email").value || "").trim(); if (!em) { toast("Add your email first"); return; } emailReport(); toast("Opening your mail app…"); return; }
   if (act === "income-add") return incomeForm();
   if (act === "expense-add") return expenseForm();
