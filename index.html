@@ -126,6 +126,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,[t
 .cattot .ct-l{font-family:var(--display);font-weight:600;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-55)}
 .cattot .ct-v{font-family:var(--display);font-weight:700;font-size:16px;font-variant-numeric:tabular-nums}
 .cattot .ct-mo{font-size:10px;color:var(--ink-55);font-weight:600;margin-left:1px}
+.paytotals{display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:2px 14px}
+.paytot{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--line)}
+.paytot:last-child{border-bottom:0}
+.paytot .pt-ic{font-size:17px;width:24px;text-align:center}
+.paytot .pt-l{flex:1;font-family:var(--display);font-weight:600;font-size:13.5px}
+.paytot .pt-v{font-family:var(--display);font-weight:700;font-size:15px;font-variant-numeric:tabular-nums}
 .monthnav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 20px 12px;padding:7px;background:var(--paper);border:1px solid var(--line);border-radius:999px}
 .mn-arrow{width:34px;height:34px;border-radius:50%;border:none;background:var(--sand);font-size:18px;font-weight:700;cursor:pointer;color:var(--ink);display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .mn-arrow:disabled{opacity:.28;cursor:default}
@@ -358,6 +364,8 @@ const REGIONS = {
 };
 
 const GROUPS = { fixed: "Fixed", subscription: "Subscription", variable: "Variable", fun: "Fun" };
+const PAY = { credit: "Credit card", debit: "Debit", cash: "Cash" };
+const PAY_ICON = { credit: "💳", debit: "🏧", cash: "💵" };
 const EMOJIS = "💼 🎨 🏠 📈 💵 🛒 🍽 ☕️ ⛽️ 🚗 📶 📱 💡 💧 🎬 🎵 ✨ 📦 🏥 🐾 ✈️ 🛍 🎓 💳 🏦 🐷 💰 🛡 🌐 ₿ 🚙 🏡 💻 💍 🎁 🧾".split(" ");
 
 // ---------- state ----------
@@ -391,18 +399,18 @@ function sampleData() {
     { id: uid(), name: "Rental — Casa Escazú", icon: "🏠", amount: 550, freq: "monthly", notes: "" },
     { id: uid(), name: "Dividends", icon: "📈", amount: 450, freq: "quarterly", notes: "" }];
   S.expenses = [
-    { id: uid(), name: "Rent", icon: "🏠", amount: 1400, freq: "monthly", group: "fixed", due: 1 },
-    { id: uid(), name: "Groceries", icon: "🛒", amount: 486, freq: "monthly", group: "variable" },
-    { id: uid(), name: "Restaurants", icon: "🍽", amount: 212, freq: "monthly", group: "fun" },
-    { id: uid(), name: "Gas & parking", icon: "⛽️", amount: 168, freq: "monthly", group: "variable" },
-    { id: uid(), name: "Internet", icon: "📶", amount: 75, freq: "monthly", group: "fixed", due: 15 },
-    { id: uid(), name: "Phone plan", icon: "📱", amount: 60, freq: "monthly", group: "fixed", due: 15 },
-    { id: uid(), name: "Netflix", icon: "🎬", amount: 15.49, freq: "monthly", group: "subscription", due: 14 },
-    { id: uid(), name: "Disney+", icon: "✨", amount: 10.99, freq: "monthly", group: "subscription", due: 9 },
-    { id: uid(), name: "Apple TV+", icon: "🍎", amount: 12.99, freq: "monthly", group: "subscription", due: 21 },
-    { id: uid(), name: "Prime Video", icon: "📦", amount: 8.99, freq: "monthly", group: "subscription", due: 3 },
-    { id: uid(), name: "Spotify", icon: "🎵", amount: 11.99, freq: "monthly", group: "subscription", due: 3 },
-    { id: uid(), name: "Gym", icon: "🏋️", amount: 45, freq: "monthly", group: "fun", due: 1 }];
+    { id: uid(), name: "Rent", icon: "🏠", amount: 1400, freq: "monthly", group: "fixed", due: 1, paidWith: "debit" },
+    { id: uid(), name: "Groceries", icon: "🛒", amount: 486, freq: "monthly", group: "variable", paidWith: "debit" },
+    { id: uid(), name: "Restaurants", icon: "🍽", amount: 212, freq: "monthly", group: "fun", paidWith: "credit" },
+    { id: uid(), name: "Gas & parking", icon: "⛽️", amount: 168, freq: "monthly", group: "variable", paidWith: "credit" },
+    { id: uid(), name: "Internet", icon: "📶", amount: 75, freq: "monthly", group: "fixed", due: 15, paidWith: "debit" },
+    { id: uid(), name: "Phone plan", icon: "📱", amount: 60, freq: "monthly", group: "fixed", due: 15, paidWith: "debit" },
+    { id: uid(), name: "Netflix", icon: "🎬", amount: 15.49, freq: "monthly", group: "subscription", due: 14, paidWith: "credit" },
+    { id: uid(), name: "Disney+", icon: "✨", amount: 10.99, freq: "monthly", group: "subscription", due: 9, paidWith: "credit" },
+    { id: uid(), name: "Apple TV+", icon: "🍎", amount: 12.99, freq: "monthly", group: "subscription", due: 21, paidWith: "credit" },
+    { id: uid(), name: "Prime Video", icon: "📦", amount: 8.99, freq: "monthly", group: "subscription", due: 3, paidWith: "credit" },
+    { id: uid(), name: "Spotify", icon: "🎵", amount: 11.99, freq: "monthly", group: "subscription", due: 3, paidWith: "credit" },
+    { id: uid(), name: "Gym", icon: "🏋️", amount: 45, freq: "monthly", group: "fun", due: 1, paidWith: "cash" }];
   S.investments = [
     { id: uid(), name: "VEQT — All-Equity ETF", icon: "🌐", value: 12910, cost: 11400, contrib: 200, type: "ETF", rate: 8, currency: "USD" },
     { id: uid(), name: "Retirement fund", icon: "🛡", value: 5480, cost: 5165, contrib: 250, type: "Retirement", rate: 6, currency: "USD" },
@@ -625,8 +633,8 @@ function exportExcel() {
       months.map(m => { const s = S.snapshots[m]; return [m, s.income, s.spent, s.income - s.spent, s.invested, s.net]; })) +
     sheet("Income", ["Name", "Amount", "Frequency", "Monthly", "Archived", "Notes"],
       S.incomes.map(i => [i.name, +i.amount || 0, FREQ_LABEL[i.freq] || i.freq, Math.round(monthly(i) * 100) / 100, i.archived ? "Yes" : "No", i.notes || ""])) +
-    sheet("Expenses", ["Name", "Type", "Amount", "Frequency", "Monthly", "Due day", "Archived", "Notes"],
-      S.expenses.map(e => [e.name, GROUPS[e.group] || "", +e.amount || 0, FREQ_LABEL[e.freq] || e.freq, Math.round(monthly(e) * 100) / 100, e.due || "", e.archived ? "Yes" : "No", e.notes || ""])) +
+    sheet("Expenses", ["Name", "Type", "Paid with", "Amount", "Frequency", "Monthly", "Due day", "Archived", "Notes"],
+      S.expenses.map(e => [e.name, GROUPS[e.group] || "", PAY[e.paidWith || "credit"] || "", +e.amount || 0, FREQ_LABEL[e.freq] || e.freq, Math.round(monthly(e) * 100) / 100, e.due || "", e.archived ? "Yes" : "No", e.notes || ""])) +
     sheet("Investments", ["Name", "Type", "Currency", "Value", "Cost basis", "Gain-Loss", "Interest/Return %", "Monthly contribution"],
       S.investments.map(i => [i.name, i.type || "", i.currency || S.currency, +i.value || 0, +i.cost || 0, (+i.value || 0) - (+i.cost || 0), +i.rate || 0, +i.contrib || 0])) +
     sheet("Assets & Debts", ["Name", "Kind", "Value", "Notes"],
@@ -971,6 +979,8 @@ function renderSpend() {
   const pct = t.income > 0 ? clamp(t.spent / t.income, 0, 1) : 0;
   const gTotal = g => S.expenses.filter(e => !e.archived && e.group === g).reduce((s, e) => s + monthly(e), 0);
   const gCount = g => S.expenses.filter(e => !e.archived && e.group === g).length;
+  const pTotal = p => S.expenses.filter(e => !e.archived && (e.paidWith || "credit") === p).reduce((s, e) => s + monthly(e), 0);
+  const pAny = Object.keys(PAY).some(p => pTotal(p) > 0);
   $("#screen").innerHTML = `
   ${topbar("Spending", "Track it month by month", true)}
   ${monthNav}
@@ -988,10 +998,11 @@ function renderSpend() {
   </div>
   <div class="pad stack" style="margin-top:12px">
     ${f === "all" && GKEYS.some(g => gCount(g)) ? `<div class="cattotals">${GKEYS.filter(g => gCount(g)).map(g => `<button class="cattot" data-filter="${g}"><span class="ct-l">${GROUPS[g]}</span><span class="ct-v num">${fmt(gTotal(g))}<span class="ct-mo">/mo</span></span></button>`).join("")}</div>` : ""}
+    ${f === "all" && pAny ? `<span class="klabel" style="opacity:1;color:var(--ink-55);margin-top:2px">Paid with</span><div class="paytotals">${Object.keys(PAY).filter(p => pTotal(p) > 0).map(p => `<div class="paytot"><span class="pt-ic">${PAY_ICON[p]}</span><span class="pt-l">${PAY[p]}</span><span class="pt-v num">${fmt(pTotal(p))}</span></div>`).join("")}</div>` : ""}
     ${GKEYS.includes(f) ? `<div class="section-h"><span class="klabel">${GROUPS[f]} · ${fmt(gTotal(f))}/mo · ${gCount(f)} item${gCount(f) === 1 ? "" : "s"}</span>${f === "subscription" && video.length >= 3 ? `<span style="font-size:11px;font-weight:600;color:var(--red-deep)">${video.length} video</span>` : ""}</div>` : ""}
     ${list.length ? `<div class="card" style="padding:6px 18px">${list.map(e =>
       rowHTML("expense", e, `${fmt(monthly(e))}<br><span class="fq">${e.freq !== "monthly" ? fmt(+e.amount) + " " + FREQ_LABEL[e.freq].toLowerCase() : "/mo"}</span>`,
-        GROUPS[e.group] + (e.due ? ` · due ${e.due}${["st","nd","rd"][((e.due+90)%100-10)%10-1]||"th"}` : "") + (e.notes ? " · " + esc(e.notes) : ""))).join("")}</div>
+        PAY_ICON[e.paidWith || "credit"] + " " + GROUPS[e.group] + (e.due ? ` · due ${e.due}${["st","nd","rd"][((e.due+90)%100-10)%10-1]||"th"}` : "") + (e.notes ? " · " + esc(e.notes) : ""))).join("")}</div>
       <p class="hint">Tap a category to edit, duplicate, archive, or delete.</p>`
     : emptyState("Nothing here yet", f === "archived" ? "Nothing archived." : "Create categories for rent, groceries, coffee — anything you spend on.", "＋ Add expense", "expense-add")}
     ${video.length >= 3 && f !== "archived" ? (() => { const cheap = video.slice().sort((a, b) => monthly(a) - monthly(b))[0]; return `
@@ -1173,7 +1184,8 @@ function incomeForm(it) {
 }
 
 function expenseForm(it) {
-  const isNew = !it; it = it || { name: "", icon: "🛒", amount: "", freq: "monthly", group: "variable", due: "", notes: "" };
+  const isNew = !it; it = it || { name: "", icon: "🛒", amount: "", freq: "once", group: "variable", due: "", notes: "", paidWith: "credit" };
+  const pw = it.paidWith || "credit";
   openSheet(`<h3>${isNew ? "Add expense" : "Edit " + esc(it.name)}</h3>
   <form data-form="expense" data-id="${it.id || ""}">
     <div class="field"><label for="f-name">Name</label><input id="f-name" name="name" required value="${esc(it.name)}" placeholder="Rent, Netflix, coffee…"></div>
@@ -1185,6 +1197,7 @@ function expenseForm(it) {
       <div class="field"><label for="f-freq">Frequency</label><select id="f-freq" name="freq">${Object.entries(FREQ_LABEL).map(([k, v]) => `<option value="${k}" ${it.freq === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
       <div class="field"><label for="f-group">Type</label><select id="f-group" name="group">${Object.entries(GROUPS).map(([k, v]) => `<option value="${k}" ${it.group === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
     </div>
+    <div class="field"><label for="f-pay">Paid with</label><select id="f-pay" name="paidWith">${Object.entries(PAY).map(([k, v]) => `<option value="${k}" ${pw === k ? "selected" : ""}>${PAY_ICON[k]} ${v}</option>`).join("")}</select></div>
     ${emojiPicker(it.icon)}
     <div class="field"><label for="f-notes">Notes (optional)</label><input id="f-notes" name="notes" value="${esc(it.notes || "")}"></div>
     <input type="hidden" name="icon" value="${esc(it.icon)}">
@@ -1510,7 +1523,7 @@ document.addEventListener("submit", e => {
     const list = LISTS[kind];
     const it = id ? S[list].find(x => x.id === id) : { id: uid() };
     if (kind === "income") Object.assign(it, { name: d.name.trim(), icon: d.icon, amount: parseFloat(d.amount) || 0, freq: d.freq, notes: d.notes || "" });
-    if (kind === "expense") Object.assign(it, { name: d.name.trim(), icon: d.icon, amount: parseFloat(d.amount) || 0, freq: d.freq, group: d.group, due: parseInt(d.due) || "", notes: d.notes || "" });
+    if (kind === "expense") Object.assign(it, { name: d.name.trim(), icon: d.icon, amount: parseFloat(d.amount) || 0, freq: d.freq, group: d.group, due: parseInt(d.due) || "", notes: d.notes || "", paidWith: d.paidWith || "credit" });
     if (kind === "invest") Object.assign(it, { name: d.name.trim(), icon: d.icon, value: parseFloat(d.value) || 0, cost: parseFloat(d.cost) || 0, contrib: parseFloat(d.contrib) || 0, type: d.type || "ETF", rate: parseFloat(d.rate) || 0, currency: d.currency || S.currency });
     if (kind === "asset") Object.assign(it, { name: d.name.trim(), icon: d.icon, value: parseFloat(d.value) || 0, liability: !!d.liability, notes: d.notes || "" });
     if (!id) S[list].push(it);
