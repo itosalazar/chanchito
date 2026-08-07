@@ -305,6 +305,9 @@ const ym = (d = new Date()) => d.getFullYear() + "-" + String(d.getMonth() + 1).
 const FREQS = { weekly: 52 / 12, biweekly: 26 / 12, monthly: 1, quarterly: 1 / 3, annual: 1 / 12, once: 1 };
 const FREQ_LABEL = { weekly: "Weekly", biweekly: "Biweekly", monthly: "Monthly", quarterly: "Quarterly", annual: "Annual", once: "One-time" };
 const monthly = it => (Number(it.amount) || 0) * (FREQS[it.freq || "monthly"] || 1);
+// recurring expenses apply every month; one-time expenses only in the month they were logged
+function expenseInMonth(e, m) { m = m || ym(); return e.freq !== "once" || (e.month || ym()) === m; }
+function liveExpenses(m) { return S.expenses.filter(e => !e.archived && expenseInMonth(e, m)); }
 
 // ---------- regional presets ----------
 const REGIONS = {
@@ -383,7 +386,16 @@ function blank() {
 }
 function A() { if (!S.alerts) S.alerts = { bom: true, eod: true, eom: true, email: "", seen: {} }; if (!S.alerts.seen) S.alerts.seen = {}; return S.alerts; }
 function load() {
-  try { const d = JSON.parse(localStorage.getItem(KEY)); if (d && d.incomes) return Object.assign(blank(), d); } catch (e) {}
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY));
+    if (d && d.incomes) {
+      const s = Object.assign(blank(), d);
+      // migrate: stamp legacy one-time expenses with the current month so they don't carry over
+      const cur = (() => { const n = new Date(); return n.getFullYear() + "-" + String(n.getMonth() + 1).padStart(2, "0"); })();
+      (s.expenses || []).forEach(e => { if (e.freq === "once" && !e.month) e.month = cur; });
+      return s;
+    }
+  } catch (e) {}
   return blank();
 }
 function save() { localStorage.setItem(KEY, JSON.stringify(S)); }
@@ -462,11 +474,12 @@ const INV_TYPES = ["ETF", "Stocks", "Retirement", "Mutual fund", "Long-term fund
 // ---------- stats & insights ----------
 function stats() {
   const act = a => a.filter(x => !x.archived);
+  const curExp = liveExpenses();
   const income = act(S.incomes).reduce((s, i) => s + monthly(i), 0);
-  const spent = act(S.expenses).reduce((s, e) => s + monthly(e), 0);
+  const spent = curExp.reduce((s, e) => s + monthly(e), 0);
   const saved = income - spent;
   const rate = income > 0 ? saved / income : 0;
-  const subs = act(S.expenses).filter(e => e.group === "subscription");
+  const subs = curExp.filter(e => e.group === "subscription");
   const subTotal = subs.reduce((s, e) => s + monthly(e), 0);
   const invested = act(S.investments).reduce((s, i) => s + toBase(+i.value || 0, i.currency), 0);
   const invCost = act(S.investments).reduce((s, i) => s + toBase(+i.cost || 0, i.currency), 0);
@@ -475,7 +488,7 @@ function stats() {
   const liab = act(S.assets).filter(a => a.liability).reduce((s, a) => s + (+a.value || 0), 0);
   const net = assetsT - liab;
   const liquid = act(S.assets).filter(a => !a.liability && /check|saving|cash|emergency|efectivo|ahorro/i.test(a.name)).reduce((s, a) => s + (+a.value || 0), 0);
-  const largest = act(S.expenses).slice().sort((a, b) => monthly(b) - monthly(a))[0] || null;
+  const largest = curExp.slice().sort((a, b) => monthly(b) - monthly(a))[0] || null;
   const prevK = shiftYm(ym(), -1);
   const prev = S.snapshots[prevK] || null;
   return { income, spent, saved, rate, subs, subTotal, invested, invCost, gain: invested - invCost, contrib, assetsT, liab, net, liquid, largest, prev };
@@ -483,18 +496,16 @@ function stats() {
 
 // food/dining split (used by snapshots + insights)
 function foodBuckets() {
-  const act = a => a.filter(x => !x.archived);
   const isDining = e => /restaur|coffee|caf|delivery|take ?out|uber ?eats|rappi|doordash|didi|domicilio|dining|comida r[aá]pida/i.test(e.name);
   const isGro = e => /grocer|supermerc|market|mandado|despensa|feria|food/i.test(e.name);
   let dining = 0, gro = 0;
-  act(S.expenses).forEach(e => { if (isDining(e)) dining += monthly(e); else if (isGro(e)) gro += monthly(e); });
+  liveExpenses().forEach(e => { if (isDining(e)) dining += monthly(e); else if (isGro(e)) gro += monthly(e); });
   return { dining, groceries: gro, food: dining + gro };
 }
 
 function snapshot() {
   const t = stats(), fb = foodBuckets();
-  const act = a => a.filter(x => !x.archived);
-  const grp = g => act(S.expenses).filter(e => e.group === g).reduce((s, e) => s + monthly(e), 0);
+  const grp = g => liveExpenses().filter(e => e.group === g).reduce((s, e) => s + monthly(e), 0);
   S.snapshots[ym()] = {
     income: Math.round(t.income), spent: Math.round(t.spent), invested: Math.round(t.invested), net: Math.round(t.net),
     subs: Math.round(t.subTotal), food: Math.round(fb.food), dining: Math.round(fb.dining), fixed: Math.round(grp("fixed")),
@@ -973,13 +984,13 @@ function renderSpend() {
   }
 
   // ----- current month: live, editable -----
-  const base = S.expenses.filter(e => f === "archived" ? e.archived : !e.archived);
+  const base = f === "archived" ? S.expenses.filter(e => e.archived) : liveExpenses();
   const list = (f === "all" || f === "archived") ? base : base.filter(e => e.group === f);
   const video = t.subs.filter(e => /netflix|disney|prime|apple tv|hbo|max|paramount|crunchy|hulu/i.test(e.name));
   const pct = t.income > 0 ? clamp(t.spent / t.income, 0, 1) : 0;
-  const gTotal = g => S.expenses.filter(e => !e.archived && e.group === g).reduce((s, e) => s + monthly(e), 0);
-  const gCount = g => S.expenses.filter(e => !e.archived && e.group === g).length;
-  const pTotal = p => S.expenses.filter(e => !e.archived && (e.paidWith || "credit") === p).reduce((s, e) => s + monthly(e), 0);
+  const gTotal = g => liveExpenses().filter(e => e.group === g).reduce((s, e) => s + monthly(e), 0);
+  const gCount = g => liveExpenses().filter(e => e.group === g).length;
+  const pTotal = p => liveExpenses().filter(e => (e.paidWith || "credit") === p).reduce((s, e) => s + monthly(e), 0);
   const pAny = Object.keys(PAY).some(p => pTotal(p) > 0);
   $("#screen").innerHTML = `
   ${topbar("Spending", "Track it month by month", true)}
@@ -1523,7 +1534,7 @@ document.addEventListener("submit", e => {
     const list = LISTS[kind];
     const it = id ? S[list].find(x => x.id === id) : { id: uid() };
     if (kind === "income") Object.assign(it, { name: d.name.trim(), icon: d.icon, amount: parseFloat(d.amount) || 0, freq: d.freq, notes: d.notes || "" });
-    if (kind === "expense") Object.assign(it, { name: d.name.trim(), icon: d.icon, amount: parseFloat(d.amount) || 0, freq: d.freq, group: d.group, due: parseInt(d.due) || "", notes: d.notes || "", paidWith: d.paidWith || "credit" });
+    if (kind === "expense") Object.assign(it, { name: d.name.trim(), icon: d.icon, amount: parseFloat(d.amount) || 0, freq: d.freq, group: d.group, due: parseInt(d.due) || "", notes: d.notes || "", paidWith: d.paidWith || "credit", month: d.freq === "once" ? (it.month || ym()) : "" });
     if (kind === "invest") Object.assign(it, { name: d.name.trim(), icon: d.icon, value: parseFloat(d.value) || 0, cost: parseFloat(d.cost) || 0, contrib: parseFloat(d.contrib) || 0, type: d.type || "ETF", rate: parseFloat(d.rate) || 0, currency: d.currency || S.currency });
     if (kind === "asset") Object.assign(it, { name: d.name.trim(), icon: d.icon, value: parseFloat(d.value) || 0, liability: !!d.liability, notes: d.notes || "" });
     if (!id) S[list].push(it);
